@@ -128,9 +128,10 @@ export const validateTag = (tag) => {
 /**
  * 验证Docker镜像地址格式
  * @param {string} imageAddress - 镜像地址
+ * @param {string} sourceType - 镜像源类型：'dockerhub' | 'ghcr'
  * @returns {Object} - {isValid: boolean, error: string, parsed: Object}
  */
-export const validateImageAddress = (imageAddress) => {
+export const validateImageAddress = (imageAddress, sourceType = 'dockerhub') => {
     if (!imageAddress || typeof imageAddress !== 'string') {
         return {
             isValid: false,
@@ -152,54 +153,109 @@ export const validateImageAddress = (imageAddress) => {
     // 移除可能的 "docker pull " 前缀
     const cleanAddress = trimmedAddress.replace(/^docker\s+pull\s+/, '');
 
-    // 解析镜像地址格式: [registry/]namespace/repository[:tag][@digest]
-    const imageRegex = /^(?:([a-zA-Z0-9.-]+(?::[0-9]+)?)\/)?((?:[a-z0-9]+(?:[._-][a-z0-9]+)*\/)*[a-z0-9]+(?:[._-][a-z0-9]+)*)(?::([a-zA-Z0-9._-]+))?(?:@([a-zA-Z0-9:.-]+))?$/;
+    // 根据 sourceType 使用不同的验证规则
+    let imageRegex;
     
-    const match = cleanAddress.match(imageRegex);
-    
-    if (!match) {
-        return {
-            isValid: false,
-            error: '镜像地址格式不正确，请使用格式：[registry/]namespace/repository[:tag]',
-            parsed: null
-        };
-    }
-
-    const [, registry, repository, tag, digest] = match;
-
-    // 验证仓库名称
-    const repoValidation = validateRepositoryName(repository);
-    if (!repoValidation.isValid) {
-        return {
-            isValid: false,
-            error: `仓库名称验证失败：${repoValidation.error}`,
-            parsed: null
-        };
-    }
-
-    // 验证标签（如果存在）
-    if (tag) {
-        const tagValidation = validateTag(tag);
-        if (!tagValidation.isValid) {
+    if (sourceType === 'ghcr') {
+        // GHCR 格式: [ghcr.io/]namespace/repository[:tag]
+        // 移除可能的 ghcr.io 前缀
+        const ghcrAddress = cleanAddress.replace(/^ghcr\.io\//, '');
+        imageRegex = /^([a-zA-Z0-9._-]+)\/([a-zA-Z0-9._-]+)(?::([a-zA-Z0-9._-]+))?$/;
+        
+        const match = ghcrAddress.match(imageRegex);
+        
+        if (!match) {
             return {
                 isValid: false,
-                error: `标签验证失败：${tagValidation.error}`,
+                error: 'GHCR 镜像地址格式不正确，请使用格式：namespace/repository[:tag]',
                 parsed: null
             };
         }
-    }
 
-    return {
-        isValid: true,
-        error: null,
-        parsed: {
-            registry: registry || 'docker.io',
-            repository,
-            tag: tag || 'latest',
-            digest,
-            fullAddress: cleanAddress
+        const [, namespace, repository, tag] = match;
+
+        // 验证 namespace 和 repository 不为空
+        if (!namespace || !repository) {
+            return {
+                isValid: false,
+                error: 'namespace 和 repository 不能为空',
+                parsed: null
+            };
         }
-    };
+
+        // 验证标签（如果存在）
+        if (tag) {
+            const tagValidation = validateTag(tag);
+            if (!tagValidation.isValid) {
+                return {
+                    isValid: false,
+                    error: `标签验证失败：${tagValidation.error}`,
+                    parsed: null
+                };
+            }
+        }
+
+        return {
+            isValid: true,
+            error: null,
+            parsed: {
+                registry: 'ghcr.io',
+                repository: `${namespace}/${repository}`,
+                tag: tag || 'latest',
+                digest: null,
+                fullAddress: cleanAddress
+            }
+        };
+    } else {
+        // Docker Hub 格式: [registry/]namespace/repository[:tag][@digest]
+        imageRegex = /^(?:([a-zA-Z0-9.-]+(?::[0-9]+)?)\/)?((?:[a-z0-9]+(?:[._-][a-z0-9]+)*\/)*[a-z0-9]+(?:[._-][a-z0-9]+)*)(?::([a-zA-Z0-9._-]+))?(?:@([a-zA-Z0-9:.-]+))?$/;
+        
+        const match = cleanAddress.match(imageRegex);
+        
+        if (!match) {
+            return {
+                isValid: false,
+                error: '镜像地址格式不正确，请使用格式：[registry/]namespace/repository[:tag]',
+                parsed: null
+            };
+        }
+
+        let [, registry, repository, tag, digest] = match;
+
+        // 验证仓库名称
+        const repoValidation = validateRepositoryName(repository);
+        if (!repoValidation.isValid) {
+            return {
+                isValid: false,
+                error: `仓库名称验证失败：${repoValidation.error}`,
+                parsed: null
+            };
+        }
+
+        // 验证标签（如果存在）
+        if (tag) {
+            const tagValidation = validateTag(tag);
+            if (!tagValidation.isValid) {
+                return {
+                    isValid: false,
+                    error: `标签验证失败：${tagValidation.error}`,
+                    parsed: null
+                };
+            }
+        }
+
+        return {
+            isValid: true,
+            error: null,
+            parsed: {
+                registry: registry || 'docker.io',
+                repository,
+                tag: tag || 'latest',
+                digest,
+                fullAddress: cleanAddress
+            }
+        };
+    }
 };
 
 /**
@@ -237,6 +293,8 @@ export const getValidationHint = (type) => {
             return '只能包含字母、数字、下划线、点和连字符，最大128个字符';
         case 'image':
             return '格式：[registry/]namespace/repository[:tag]，例如：nginx:alpine';
+        case 'ghcrImage':
+            return '格式：namespace/repository[:tag]，例如：owner/repo:latest';
         default:
             return '';
     }
