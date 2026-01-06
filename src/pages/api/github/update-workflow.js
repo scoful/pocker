@@ -6,7 +6,7 @@ const handler = async (req, res) => {
         return res.status(405).json({message: '方法不允许'});
     }
 
-    const {sourceImage, targetImage} = req.body;
+    const {sourceImage, targetImage, sourceType = 'dockerhub'} = req.body;
 
     if (!sourceImage || !targetImage) {
         return res.status(400).json({
@@ -19,7 +19,7 @@ const handler = async (req, res) => {
     const region = req.headers['x-region'] || 'cn-north-4';
 
     try {
-        const result = await updateWorkflowFile(sourceImage, targetImage, region);
+        const result = await updateWorkflowFile(sourceImage, targetImage, region, sourceType);
         res.status(200).json({
             success: true,
             data: result
@@ -32,4 +32,4 @@ const handler = async (req, res) => {
     }
 };
 
-export default withAuth(handler); 
+export default withAuth(handler);

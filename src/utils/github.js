@@ -304,7 +304,7 @@ export const configureAutoUpdate = async (repo) => {
 };
 
 // 更新工作流文件
-export const updateWorkflowFile = async (sourceImage, targetImage, region) => {
+export const updateWorkflowFile = async (sourceImage, targetImage, region, sourceType = 'dockerhub') => {
     try {
         const username = await getUsername();
         const huaweicloud_username = process.env.NEXT_PUBLIC_HUAWEICLOUD_USERNAME;
@@ -315,6 +315,18 @@ export const updateWorkflowFile = async (sourceImage, targetImage, region) => {
         } else {
             newUsername = huaweicloud_username || '';
         }
+
+        // 根据源类型设置不同的拉取命令和镜像名称
+        let pullCommand = '';
+        let sourceImageWithTag = '';
+        if (sourceType === 'ghcr') {
+            pullCommand = `docker pull ghcr.io/${sourceImage}`;
+            sourceImageWithTag = `ghcr.io/${sourceImage}`;
+        } else {
+            pullCommand = `docker pull ${sourceImage}`;
+            sourceImageWithTag = sourceImage;
+        }
+
         const workflowContent = `
 name: Docker Image CI
 
@@ -328,9 +340,9 @@ jobs:
   docker:
     runs-on: ubuntu-latest
     steps:
-      - name: Pull Docker image from Docker Hub
+      - name: Pull Docker image from ${sourceType === 'ghcr' ? 'GitHub Container Registry' : 'Docker Hub'}
         run: |
-          docker pull ${sourceImage}
+          ${pullCommand}
 
       - name: Login to HuaWei Docker Hub
         uses: docker/login-action@v3
@@ -341,7 +353,7 @@ jobs:
 
       - name: Tag the image for HuaWei
         run: |
-          docker tag ${sourceImage} ${targetImage}
+          docker tag ${sourceImageWithTag} ${targetImage}
 
       - name: Push the image to HuaWei Docker Hub
         run: |
